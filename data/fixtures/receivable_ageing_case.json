@@ -1,0 +1,14 @@
+{
+  "description": "Receivable ageing XLSX with customer/AR keywords",
+  "filename": "ar_ageing.xlsx",
+  "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "sheet_name": "Receivable Ageing",
+  "headers": ["Customer", "accounts receivable", "debtor", "AR ageing", "0-30 days", "31-60 days"],
+  "rows": [["Debtor A", 2000, 800, 0, 200, 100]],
+  "expected": {
+    "document_type": "Receivable Ageing Report",
+    "class_label": "receivable_ageing_report",
+    "subject_type": "business",
+    "classification_method": "rule_based"
+  }
+}

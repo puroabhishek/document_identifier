@@ -1,0 +1,13 @@
+[
+  {
+    "id": "payable-001",
+    "description": "Standard payable ageing XLSX with vendor/AP keywords",
+    "file_path": "data/raw/payable_ageing/sample.xlsx",
+    "filename": "ap_ageing_report.xlsx",
+    "expected": {
+      "document_type": "Payable Ageing Report",
+      "subject_type": "business",
+      "classification_method": "rule_based"
+    }
+  }
+]

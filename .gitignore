@@ -1,0 +1,22 @@
+.env
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.mypy_cache/
+*.pem
+# GCP service account credentials — never commit
+*-service-account.json
+*credentials*.json
+# Eval scorecards (generated output)
+evals/scorecards/*.json
+# Raw sample files can be large — store in GCS/LFS instead
+data/raw/
+!.env.example
