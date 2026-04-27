@@ -1,0 +1,13 @@
+[
+  {
+    "id": "bank-001",
+    "description": "PDF bank statement from any bank",
+    "file_path": "data/raw/bank_statement/sample.pdf",
+    "filename": "bank_statement.pdf",
+    "expected": {
+      "document_type": "Bank Statement",
+      "subject_type": "business",
+      "classification_method": "document_ai"
+    }
+  }
+]

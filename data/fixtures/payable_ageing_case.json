@@ -1,0 +1,14 @@
+{
+  "description": "Payable ageing XLSX with vendor/AP keywords",
+  "filename": "ap_ageing.xlsx",
+  "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "sheet_name": "Payable Ageing",
+  "headers": ["Vendor", "accounts payable", "supplier", "creditor", "AP ageing", "0-30 days"],
+  "rows": [["Supplier A", 1000, 500, 200, "payable ageing", 100]],
+  "expected": {
+    "document_type": "Payable Ageing Report",
+    "class_label": "payable_ageing_report",
+    "subject_type": "business",
+    "classification_method": "rule_based"
+  }
+}

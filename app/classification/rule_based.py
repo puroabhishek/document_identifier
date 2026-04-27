@@ -1,25 +1,23 @@
-import re
+from __future__ import annotations
+
+import glob
+import os
 from dataclasses import dataclass
 
+import yaml
 
-AGEING_RULES: list[dict] = [
-    {
-        "class_label": "payable_ageing_report",
-        "keywords": [
-            "payable ageing", "payable aging", "accounts payable",
-            "ap ageing", "ap aging", "creditors ageing", "creditor aging",
-            "vendor", "supplier", "creditor",
-        ],
-    },
-    {
-        "class_label": "receivable_ageing_report",
-        "keywords": [
-            "receivable ageing", "receivable aging", "accounts receivable",
-            "ar ageing", "ar aging", "debtors ageing", "debtor aging",
-            "customer", "debtor",
-        ],
-    },
-]
+
+def _load_rules() -> list[dict]:
+    rules_dir = os.path.join(os.path.dirname(__file__), "..", "..", "prompts", "rules")
+    rules_dir = os.path.normpath(rules_dir)
+    rules = []
+    for path in sorted(glob.glob(os.path.join(rules_dir, "*.yaml"))):
+        with open(path, "r") as f:
+            rules.append(yaml.safe_load(f))
+    return rules
+
+
+AGEING_RULES: list[dict] = _load_rules()
 
 
 @dataclass
