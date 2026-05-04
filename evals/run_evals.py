@@ -80,6 +80,7 @@ def run_case(client: httpx.Client, base_url: str, case: dict, repo_root: str) ->
             "subject_type": actual.get("subject_type"),
             "classification_method": actual.get("classification_method"),
             "confidence": actual.get("confidence"),
+            "extracted_fields": actual.get("extracted_fields"),
         },
     }
 

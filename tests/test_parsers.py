@@ -4,7 +4,7 @@ import openpyxl
 import pytest
 
 from app.parsers.xlsx_parser import XlsxParser
-from app.parsers.factory import is_xlsx, get_document_ai_mime
+from app.parsers.factory import is_xlsx, get_mime_type
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -66,13 +66,13 @@ def test_is_xlsx_false_for_pdf():
     assert is_xlsx("application/pdf", "doc.pdf") is False
 
 
-def test_get_document_ai_mime_pdf():
-    assert get_document_ai_mime("application/pdf", "doc.pdf") == "application/pdf"
+def test_get_mime_type_pdf():
+    assert get_mime_type("application/pdf", "doc.pdf") == "application/pdf"
 
 
-def test_get_document_ai_mime_fallback_by_extension():
-    assert get_document_ai_mime("application/octet-stream", "doc.pdf") == "application/pdf"
+def test_get_mime_type_fallback_by_extension():
+    assert get_mime_type("application/octet-stream", "doc.pdf") == "application/pdf"
 
 
-def test_get_document_ai_mime_jpeg():
-    assert get_document_ai_mime("image/jpeg", "photo.jpg") == "image/jpeg"
+def test_get_mime_type_jpeg():
+    assert get_mime_type("image/jpeg", "photo.jpg") == "image/jpeg"

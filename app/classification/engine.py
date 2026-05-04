@@ -7,10 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.models.document_type import DocumentType
-from app.parsers.factory import is_xlsx, get_xlsx_parser, get_document_ai_mime
+from app.core.protocols import ClassificationServiceProtocol, ServiceResult
+from app.parsers.factory import is_xlsx, get_xlsx_parser, get_mime_type
 from app.classification.rule_based import score_xlsx
-from app.services.document_ai import DocumentAIService
 
 if TYPE_CHECKING:
     pass
@@ -22,15 +21,15 @@ class ClassificationResult:
     matched_type_id: int | None
     subject_type: str | None
     confidence: float
-    classification_method: str  # "document_ai" | "rule_based" | "unclassified"
-    doc_ai_raw_response: dict[str, Any] | None = None
+    classification_method: str  # "local_llm" | "rule_based" | "unclassified"
+    llm_raw_response: dict[str, Any] | None = None
     error_message: str | None = None
 
 
 class ClassificationEngine:
-    def __init__(self, settings: Settings, doc_ai_service: DocumentAIService) -> None:
+    def __init__(self, settings: Settings, service: ClassificationServiceProtocol) -> None:
         self._settings = settings
-        self._doc_ai = doc_ai_service
+        self._service = service
 
     async def classify(
         self,
@@ -39,6 +38,8 @@ class ClassificationEngine:
         filename: str,
         db: AsyncSession,
     ) -> ClassificationResult:
+        from app.models.document_type import DocumentType
+
         result = await db.execute(
             select(DocumentType).where(DocumentType.is_active == True)  # noqa: E712
         )
@@ -48,10 +49,10 @@ class ClassificationEngine:
         if is_xlsx(content_type, filename):
             return self._classify_xlsx(content, label_map)
 
-        return self._classify_via_doc_ai(content, content_type, filename, label_map)
+        return self._classify_via_service(content, content_type, filename, label_map)
 
     def _classify_xlsx(
-        self, content: bytes, label_map: dict[str, DocumentType]
+        self, content: bytes, label_map: dict
     ) -> ClassificationResult:
         try:
             text = get_xlsx_parser().parse(content)
@@ -85,16 +86,16 @@ class ClassificationEngine:
             classification_method="unclassified",
         )
 
-    def _classify_via_doc_ai(
+    def _classify_via_service(
         self,
         content: bytes,
         content_type: str,
         filename: str,
-        label_map: dict[str, DocumentType],
+        label_map: dict,
     ) -> ClassificationResult:
-        mime = get_document_ai_mime(content_type, filename)
+        mime = get_mime_type(content_type, filename)
         try:
-            result = self._doc_ai.classify(content, mime)
+            result: ServiceResult = self._service.classify(content, mime)
         except Exception as exc:
             return ClassificationResult(
                 matched_type_name=None,
@@ -112,8 +113,8 @@ class ClassificationEngine:
                 matched_type_id=dt.id,
                 subject_type=dt.subject_type,
                 confidence=round(result.confidence, 4),
-                classification_method="document_ai",
-                doc_ai_raw_response=result.raw_response,
+                classification_method="local_llm",
+                llm_raw_response=result.raw_response,
             )
 
         return ClassificationResult(
@@ -122,5 +123,5 @@ class ClassificationEngine:
             subject_type=None,
             confidence=round(result.confidence, 4),
             classification_method="unclassified",
-            doc_ai_raw_response=result.raw_response,
+            llm_raw_response=result.raw_response,
         )

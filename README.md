@@ -21,7 +21,7 @@ Automatically classifies uploaded business and individual documents using **Goog
 | 10 | Audited Financial Report | `audited_financial_report` |
 | 11 | Statement of Account | `statement_of_account` |
 
-### Individual / Shareholder (4)
+### Individual / Shareholder (4) — `subject_type: individual` in responses
 | # | Name | class_label |
 |---|---|---|
 | 12 | Passport (any country) | `passport` |
@@ -34,7 +34,7 @@ Automatically classifies uploaded business and individual documents using **Goog
 ## Classification Pipeline
 
 ```
-Upload file (PDF, XLSX, DOCX, JPG, PNG)
+Upload file (PDF, XLSX, DOCX, JPG, JPEG, PNG)
     │
     ▼
 Validate extension + file size
@@ -86,7 +86,7 @@ document_identifier/
 │       └── seed_data.yaml      All 15 document type definitions
 │
 ├── data/                       Test inputs and eval fixtures
-│   ├── raw/                    Sample files per doc type (gitignored if large)
+│   ├── raw/                    Sample files per doc type — create manually, gitignored
 │   └── fixtures/               JSON fixture definitions for evals
 │
 ├── agents/                     Classifier configuration
@@ -95,7 +95,7 @@ document_identifier/
 │
 ├── evals/                      End-to-end accuracy measurement
 │   ├── test_cases/             Input + expected output per document type
-│   ├── scorecards/             Output from eval runs (gitignored)
+│   ├── scorecards/             Output from eval runs — created on first run, gitignored
 │   └── run_evals.py            Eval runner script
 │
 ├── alembic/                    DB migrations
@@ -165,7 +165,7 @@ The server seeds all 15 document types on startup. Open `http://localhost:8000/d
 | `GET` | `/api/v1/training/documents` | List training samples |
 | `DELETE` | `/api/v1/training/documents/{id}` | Remove a training sample |
 | `POST` | `/api/v1/training/train` | Trigger classifier retraining (async LRO) |
-| `GET` | `/api/v1/training/status` | Poll training operation status |
+| `GET` | `/api/v1/training/status?operation_name=<name>` | Poll training operation status (operation name returned by `/train`) |
 
 ### Health
 | Method | Path | Description |

@@ -7,15 +7,16 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite+aiosqlite:///./document_identifier.db"
 
-    google_cloud_project_id: str = ""
-    google_application_credentials: str = ""
-    document_ai_location: str = "us"
-    document_ai_processor_id: str = ""
-    gcs_training_bucket: str = ""
+    # Local LLM (Ollama)
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:14b"
+    local_training_dir: str = "data/training"
 
+    # Classification thresholds
     confidence_threshold: float = 0.6
     xlsx_rule_threshold: float = 0.5
 
+    # Upload constraints
     max_upload_bytes: int = 20 * 1024 * 1024
     debug: bool = False
     allowed_extensions: list[str] = [".pdf", ".jpg", ".jpeg", ".png", ".docx", ".xlsx"]

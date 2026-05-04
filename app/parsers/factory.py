@@ -5,7 +5,7 @@ from app.parsers.xlsx_parser import XlsxParser
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-DOCUMENT_AI_MIMES = {
+SUPPORTED_MIMES = {
     "application/pdf",
     "image/jpeg",
     "image/png",
@@ -21,8 +21,8 @@ def is_xlsx(content_type: str, filename: str) -> bool:
     return content_type == XLSX_MIME or Path(filename).suffix.lower() == ".xlsx"
 
 
-def get_document_ai_mime(content_type: str, filename: str) -> str:
-    if content_type in DOCUMENT_AI_MIMES:
+def get_mime_type(content_type: str, filename: str) -> str:
+    if content_type in SUPPORTED_MIMES:
         return content_type
     ext_map = {
         ".pdf": "application/pdf",

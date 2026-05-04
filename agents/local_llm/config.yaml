@@ -1,0 +1,12 @@
+ollama_model: qwen2.5:14b
+ollama_host: http://localhost:11434   # update to container/service hostname in production
+confidence_threshold: 0.6
+prompt_max_doc_chars: 4000            # document text sent to Ollama is truncated to this length
+prompt_max_examples_per_class: 2     # max few-shot examples included per document type
+text_extraction: docling
+
+data_sovereignty: >
+  All document processing is in-process on this server.
+  Temp files written for Docling are deleted in finally blocks —
+  document bytes never persist on disk beyond the duration of a single conversion call.
+  No bytes are transmitted to any external service.

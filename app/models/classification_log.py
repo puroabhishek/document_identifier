@@ -19,14 +19,14 @@ class ClassificationLog(Base):
     file_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     classification_method: Mapped[str] = mapped_column(
         String(50), nullable=False
-    )  # "document_ai" | "rule_based" | "unclassified"
+    )  # "local_llm" | "rule_based" | "unclassified"
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     matched_type_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("document_types.id", ondelete="SET NULL"), nullable=True
     )
     matched_type_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     subject_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    doc_ai_raw_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    llm_raw_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), nullable=False, index=True

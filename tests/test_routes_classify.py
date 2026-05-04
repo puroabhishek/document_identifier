@@ -1,13 +1,14 @@
 import io
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import openpyxl
 import pytest
 from httpx import AsyncClient
 
 from app.classification.engine import ClassificationEngine, ClassificationResult
+from app.core.container import AppContainer
 from app.models.document_type import DocumentType
-from app.routers import classify as classify_module
+from app.routers.classify import get_app_container
 
 
 def _make_xlsx_bytes() -> bytes:
@@ -21,15 +22,16 @@ def _make_xlsx_bytes() -> bytes:
     return buf.getvalue()
 
 
-def _mock_engine(result: ClassificationResult) -> ClassificationEngine:
-    mock = MagicMock(spec=ClassificationEngine)
-    import asyncio
+def _make_mock_container(result: ClassificationResult) -> AppContainer:
+    mock_engine = MagicMock(spec=ClassificationEngine)
 
     async def _classify(*args, **kwargs):
         return result
 
-    mock.classify.side_effect = _classify
-    return mock
+    mock_engine.classify.side_effect = _classify
+    container = MagicMock(spec=AppContainer)
+    container.engine = mock_engine
+    return container
 
 
 @pytest.mark.asyncio
@@ -75,6 +77,8 @@ async def test_classify_rejects_oversized_file(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_classify_response_has_subject_type(async_client: AsyncClient, db_session):
+    from app.main import app
+
     dt = DocumentType(
         name="Payable Ageing Report 2",
         class_label="payable_ageing_report_2",
@@ -83,16 +87,17 @@ async def test_classify_response_has_subject_type(async_client: AsyncClient, db_
     db_session.add(dt)
     await db_session.commit()
 
-    classify_module._engine_cache = _mock_engine(
+    mock_container = _make_mock_container(
         ClassificationResult(
             matched_type_name="Payable Ageing Report 2",
             matched_type_id=dt.id,
             subject_type="business",
             confidence=0.9,
-            classification_method="document_ai",
+            classification_method="local_llm",
         )
     )
 
+    app.dependency_overrides[get_app_container] = lambda: mock_container
     try:
         resp = await async_client.post(
             "/api/v1/documents/classify",
@@ -102,5 +107,6 @@ async def test_classify_response_has_subject_type(async_client: AsyncClient, db_
         data = resp.json()
         assert data["subject_type"] == "business"
         assert data["document_type"] == "Payable Ageing Report 2"
+        assert data["classification_method"] == "local_llm"
     finally:
-        classify_module._engine_cache = None
+        app.dependency_overrides.pop(get_app_container, None)

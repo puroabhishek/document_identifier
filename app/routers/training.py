@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import os
+import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response
@@ -8,25 +9,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
+from app.core.container import AppContainer, get_container
 from app.db.session import get_db
 from app.exceptions import DocumentTypeNotFoundError, TrainingDocumentNotFoundError
 from app.models.document_type import DocumentType
 from app.models.training_document import TrainingDocument
-from app.schemas.training import TrainingDocumentRead, TrainResponse, TrainingStatusResponse
+from app.parsers.factory import get_mime_type
+from app.schemas.training import TrainingDocumentRead, TrainResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/training", tags=["training"])
 
 
-def _gcs_client(settings: Settings):
-    from google.cloud import storage
-    return storage.Client(project=settings.google_cloud_project_id)
-
-
-def _doc_ai_client(settings: Settings):
-    from google.cloud import documentai
-    from google.api_core.client_options import ClientOptions
-    opts = ClientOptions(api_endpoint=f"{settings.document_ai_location}-documentai.googleapis.com")
-    return documentai.DocumentProcessorServiceClient(client_options=opts)
+def get_app_container() -> AppContainer:
+    return get_container()
 
 
 @router.post("/documents", response_model=TrainingDocumentRead, status_code=201)
@@ -35,29 +32,57 @@ async def upload_training_document(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    container: AppContainer = Depends(get_app_container),
 ) -> TrainingDocument:
     dt = await db.get(DocumentType, document_type_id)
     if dt is None:
         raise DocumentTypeNotFoundError(f"Document type {document_type_id} not found.")
 
     content = await file.read()
-    gcs_path = f"training/{dt.class_label}/{file.filename}"
-    gcs_uri = f"gs://{settings.gcs_training_bucket}/{gcs_path}"
+    filename = file.filename or "unknown"
 
-    client = _gcs_client(settings)
-    bucket = client.bucket(settings.gcs_training_bucket)
-    blob = bucket.blob(gcs_path)
-    blob.upload_from_string(content, content_type=file.content_type or "application/octet-stream")
+    # Write file locally
+    class_dir = Path(settings.local_training_dir) / dt.class_label
+    class_dir.mkdir(parents=True, exist_ok=True)
+    local_path = class_dir / filename
+    local_path.write_bytes(content)
 
-    td = TrainingDocument(
-        document_type_id=document_type_id,
-        filename=file.filename or "unknown",
-        gcs_uri=gcs_uri,
-        file_size_bytes=len(content),
+    # Extract text via Docling
+    extracted_text: str | None = None
+    try:
+        mime = get_mime_type(file.content_type or "", filename)
+        extracted_text = container.text_extractor.parse(content)
+    except Exception as exc:
+        logger.warning("Docling extraction failed for training doc '%s': %s", filename, exc)
+
+    # Idempotent upsert — same (document_type_id, filename) updates rather than duplicates
+    existing = await db.execute(
+        select(TrainingDocument).where(
+            TrainingDocument.document_type_id == document_type_id,
+            TrainingDocument.filename == filename,
+        )
     )
-    db.add(td)
+    td = existing.scalar_one_or_none()
+
+    if td is not None:
+        td.storage_uri = str(local_path)
+        td.file_size_bytes = len(content)
+        td.extracted_text = extracted_text
+    else:
+        td = TrainingDocument(
+            document_type_id=document_type_id,
+            filename=filename,
+            storage_uri=str(local_path),
+            file_size_bytes=len(content),
+            extracted_text=extracted_text,
+        )
+        db.add(td)
+
     await db.commit()
     await db.refresh(td)
+
+    await container.refresh_prompt_context(db)
+
     return td
 
 
@@ -80,102 +105,49 @@ async def list_training_documents(
 async def delete_training_document(
     training_doc_id: int,
     db: AsyncSession = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    container: AppContainer = Depends(get_app_container),
 ) -> Response:
     td = await db.get(TrainingDocument, training_doc_id)
     if td is None:
         raise TrainingDocumentNotFoundError(f"Training document {training_doc_id} not found.")
 
-    try:
-        client = _gcs_client(settings)
-        bucket = client.bucket(settings.gcs_training_bucket)
-        gcs_path = td.gcs_uri.replace(f"gs://{settings.gcs_training_bucket}/", "")
-        bucket.blob(gcs_path).delete()
-    except Exception:
-        pass
-
+    Path(td.storage_uri).unlink(missing_ok=True)
     await db.delete(td)
     await db.commit()
+
+    await container.refresh_prompt_context(db)
     return Response(status_code=204)
 
 
 @router.post("/train", response_model=TrainResponse)
-async def trigger_training(
+async def rebuild_training_cache(
     db: AsyncSession = Depends(get_db),
-    settings: Settings = Depends(get_settings),
+    container: AppContainer = Depends(get_app_container),
 ) -> TrainResponse:
-    result = await db.execute(select(TrainingDocument))
-    training_docs = result.scalars().all()
-    if not training_docs:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=422, detail="No training documents uploaded yet.")
-
-    result_dt = await db.execute(select(DocumentType).where(DocumentType.is_active == True))  # noqa: E712
-    active_types = result_dt.scalars().all()
-    label_map: dict[int, str] = {dt.id: dt.class_label for dt in active_types}
-
-    from google.cloud import documentai
-    from google.api_core.client_options import ClientOptions
-
-    opts = ClientOptions(api_endpoint=f"{settings.document_ai_location}-documentai.googleapis.com")
-    client = documentai.DocumentProcessorServiceClient(client_options=opts)
-    processor_name = client.processor_path(
-        settings.google_cloud_project_id, settings.document_ai_location, settings.document_ai_processor_id
+    """Re-extract text for any training documents with missing extracted_text,
+    then refresh the prompt builder. Synchronous — no polling required."""
+    result = await db.execute(
+        select(TrainingDocument).where(TrainingDocument.extracted_text.is_(None))
     )
+    docs = result.scalars().all()
 
-    labeled_docs = []
-    for td in training_docs:
-        class_label = label_map.get(td.document_type_id, "unknown")
-        labeled_docs.append(
-            documentai.LabeledDocument(
-                gcs_document=documentai.GcsDocument(gcs_uri=td.gcs_uri, mime_type="application/pdf"),
-                annotator_id=class_label,
-            )
-        )
+    rebuilt = 0
+    for td in docs:
+        path = Path(td.storage_uri)
+        if not path.exists():
+            logger.warning("Training file missing at %s, skipping", td.storage_uri)
+            continue
+        try:
+            content = path.read_bytes()
+            td.extracted_text = container.text_extractor.parse(content)
+            await db.commit()
+            rebuilt += 1
+        except Exception as exc:
+            logger.warning("Rebuild failed for '%s': %s", td.filename, exc)
 
-    train_request = documentai.TrainProcessorVersionRequest(
-        parent=processor_name,
-        processor_version=documentai.ProcessorVersion(
-            display_name="auto-trained-version"
-        ),
-        document_schema=documentai.DocumentSchema(
-            entity_types=[
-                documentai.DocumentSchema.EntityType(
-                    name=class_label,
-                    base_types=["object"],
-                )
-                for class_label in label_map.values()
-            ]
-        ),
-    )
-
-    operation = client.train_processor_version(request=train_request)
-    op_name = operation.operation.name
+    await container.refresh_prompt_context(db)
 
     return TrainResponse(
-        operation_name=op_name,
-        message="Training started. Poll /api/v1/training/status?operation_name=... to check progress.",
-    )
-
-
-@router.get("/status", response_model=TrainingStatusResponse)
-async def training_status(
-    operation_name: str = Query(...),
-    settings: Settings = Depends(get_settings),
-) -> TrainingStatusResponse:
-    from google.longrunning import operations_pb2
-    from google.cloud import documentai
-    from google.api_core.client_options import ClientOptions
-
-    opts = ClientOptions(api_endpoint=f"{settings.document_ai_location}-documentai.googleapis.com")
-    client = documentai.DocumentProcessorServiceClient(client_options=opts)
-    op = client._transport._operations_client.get_operation(
-        operations_pb2.GetOperationRequest(name=operation_name)
-    )
-    error_msg = op.error.message if op.error.code else None
-    return TrainingStatusResponse(
-        operation_name=operation_name,
-        done=op.done,
-        state="done" if op.done else "running",
-        error=error_msg,
+        message=f"Rebuilt extraction cache for {rebuilt} document(s). Prompt examples refreshed.",
+        documents_rebuilt=rebuilt,
     )

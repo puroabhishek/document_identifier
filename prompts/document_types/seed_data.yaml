@@ -3,10 +3,10 @@ document_types:
   - name: Commercial Registration
     class_label: commercial_registration
     subject_type: business
-    issuing_agency: Ministry of Commerce
+    issuing_agency: Ministry of Commerce or Qatar Financial Centre Authority (QFC)
     description: >
       Issued by the Ministry of Commerce. Contains a CR number, company legal name,
-      business activity, registration and expiry dates. Also known as 'سجل تجاري'.
+      business activity, registration and expiry dates, shareholder details, and other relevant information. Also known as 'سجل تجاري'.
 
   - name: Trade License
     class_label: trade_license
