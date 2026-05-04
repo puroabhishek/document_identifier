@@ -1,6 +1,8 @@
 # Document Identifier
 
-Automatically classifies uploaded business and individual documents using **Google Document AI Custom Classifier** and a rule-based fallback for Excel files. Designed for onboarding journeys where users upload multiple documents at once — the system identifies each one and routes it to the correct slot.
+Automatically classifies uploaded business and individual documents using a **fully local AI pipeline** — Docling for text extraction and Qwen2.5 via Ollama for classification. Designed for fintech onboarding journeys where users upload multiple documents at once — the system identifies each one and routes it to the correct slot.
+
+**Data sovereignty:** All processing is in-process on the host server. No document bytes are transmitted to any external service. QCB data residency compliant.
 
 ---
 
@@ -41,7 +43,10 @@ Validate extension + file size
     │
     ├── XLSX? ──→ XlsxParser → keyword scoring (prompts/rules/*.yaml)
     │
-    └── Other ──→ Google Document AI Custom Classifier
+    └── Other ──→ Docling (extract text + tables → markdown)
+                        │
+                        ▼
+              Qwen2.5:14b via Ollama (few-shot classification)
                         │
                         ▼
               Match class_label → DocumentType in DB
@@ -57,8 +62,12 @@ Validate extension + file size
 
 **Classification methods:**
 - `rule_based` — XLSX files scored against keyword rules in `prompts/rules/`
-- `document_ai` — All other formats sent to Google Document AI
-- `unclassified` — No match or confidence below threshold
+- `local_llm` — PDF/image/DOCX processed by Docling + Qwen2.5 locally
+- `unclassified` — No match or confidence below threshold (default 0.6)
+
+**Why this stack:**
+- **Docling** (IBM open-source) — best-in-class table extraction from PDFs, critical for bank statements, ageing reports, and financial statements
+- **Qwen2.5:14b** — strongest Arabic-English bilingual model available for local deployment; handles Qatar-specific documents (QID, CR, Trade License) reliably
 
 ---
 
@@ -67,16 +76,19 @@ Validate extension + file size
 ```
 document_identifier/
 ├── app/                        FastAPI backend
+│   ├── core/                   Dependency injection layer
+│   │   ├── protocols.py        ServiceResult type + ClassificationServiceProtocol
+│   │   └── container.py        AppContainer — owns all shared services
 │   ├── classification/         Engine + rule-based scorer
 │   ├── db/                     SQLAlchemy base, session, seed loader
 │   ├── models/                 DocumentType, TrainingDocument, ClassificationLog
-│   ├── parsers/                XLSX parser + MIME factory
+│   ├── parsers/                XlsxParser, DoclingParser, MIME factory
 │   ├── routers/                classify, document_types, training, health
 │   ├── schemas/                Pydantic request/response models
-│   ├── services/               Google Document AI wrapper
+│   ├── services/               LocalLLMService + PromptBuilder
 │   ├── config.py               Pydantic-settings (reads .env)
 │   ├── exceptions.py           Custom exceptions + FastAPI handlers
-│   └── main.py                 App factory + lifespan hooks
+│   └── main.py                 App factory + lifespan (Ollama health check, seed, prompt load)
 │
 ├── prompts/                    AI artifacts — versioned like code
 │   ├── rules/                  XLSX keyword rules (edit to add keywords, no deploy needed)
@@ -87,11 +99,12 @@ document_identifier/
 │
 ├── data/                       Test inputs and eval fixtures
 │   ├── raw/                    Sample files per doc type — create manually, gitignored
+│   ├── training/               Labeled training docs uploaded via API — gitignored
 │   └── fixtures/               JSON fixture definitions for evals
 │
-├── agents/                     Classifier configuration
-│   └── document_ai/
-│       └── processor_config.yaml   Non-secret AI config (thresholds, MIME types)
+├── agents/                     AI configuration — versioned like code
+│   └── local_llm/
+│       └── config.yaml         Non-secret LLM config (model, thresholds, data sovereignty note)
 │
 ├── evals/                      End-to-end accuracy measurement
 │   ├── test_cases/             Input + expected output per document type
@@ -99,8 +112,10 @@ document_identifier/
 │   └── run_evals.py            Eval runner script
 │
 ├── alembic/                    DB migrations
-│   └── versions/001_initial_schema.py
-└── tests/                      Unit + integration tests (33 tests)
+│   └── versions/
+│       ├── 001_initial_schema.py
+│       └── 002_local_storage.py   Rename gcs_uri→storage_uri, add extracted_text
+└── tests/                      Unit + integration tests (50 tests)
 ```
 
 ---
@@ -110,36 +125,49 @@ document_identifier/
 ### 1. Prerequisites
 
 - Python 3.11+
-- A Google Cloud project with [Document AI API enabled](https://cloud.google.com/document-ai/docs/setup)
-- A `CUSTOM_CLASSIFICATION_PROCESSOR` created in Document AI
-- A GCS bucket for training data
+- [Ollama](https://ollama.com) installed and running
 
-### 2. Install dependencies
+### 2. Install Ollama and pull the model
+
+```bash
+# Install Ollama from https://ollama.com, then:
+ollama serve                    # start Ollama server (keep running)
+ollama pull qwen2.5:14b         # ~8.9 GB download — do this once
+```
+
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure environment
+Note: `docling` pulls PyTorch and layout models on first install (~2–4 GB). Subsequent installs are cached.
+
+### 4. Configure environment
 
 ```bash
 cp .env.example .env
-# Fill in your GCP values in .env
+# Defaults work out of the box — no edits required for local setup
 ```
 
-### 4. Run database migrations
+### 5. Run database migrations
 
 ```bash
 alembic upgrade head
 ```
 
-### 5. Start the server
+### 6. Start the server
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-The server seeds all 15 document types on startup. Open `http://localhost:8000/docs` for the interactive API.
+On startup the server:
+- Seeds all 15 document types into the database
+- Pings Ollama — **fails fast** if Ollama is unreachable (run `ollama serve` first)
+- Loads any existing training examples into the prompt builder
+
+Open `http://localhost:8000/docs` for the interactive API.
 
 ---
 
@@ -161,11 +189,10 @@ The server seeds all 15 document types on startup. Open `http://localhost:8000/d
 ### Training Management
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/v1/training/documents` | Upload a labeled training sample |
+| `POST` | `/api/v1/training/documents` | Upload a labeled training sample — text extracted immediately |
 | `GET` | `/api/v1/training/documents` | List training samples |
 | `DELETE` | `/api/v1/training/documents/{id}` | Remove a training sample |
-| `POST` | `/api/v1/training/train` | Trigger classifier retraining (async LRO) |
-| `GET` | `/api/v1/training/status?operation_name=<name>` | Poll training operation status (operation name returned by `/train`) |
+| `POST` | `/api/v1/training/train` | Backfill extraction for any samples missing text (sync, instant) |
 
 ### Health
 | Method | Path | Description |
@@ -174,13 +201,30 @@ The server seeds all 15 document types on startup. Open `http://localhost:8000/d
 
 ---
 
+## How Training Works
+
+Training uses **few-shot prompting** — no model fine-tuning, no retraining jobs.
+
+Uploading a labeled document adds it as an example in the classification prompt. Effect is immediate.
+
+```
+POST /api/v1/training/documents  (document_type_id=9, file=bank_statement.pdf)
+  → Docling extracts text from the PDF
+  → Stored in DB as a labeled example
+  → Prompt builder refreshed — example active for all future classify calls
+  → 201 returned (no polling required)
+```
+
+**More labeled examples = better accuracy**, especially for document types that look visually similar (e.g. bank statement vs statement of account).
+
+---
+
 ## Adding a New Document Type
 
 1. Add an entry to `prompts/document_types/seed_data.yaml`
-2. Restart the server — it seeds on startup
+2. Restart the server — seeds on startup
 3. Upload labeled training samples via `POST /api/v1/training/documents`
-4. Trigger retraining via `POST /api/v1/training/train`
-5. Poll `GET /api/v1/training/status` until done
+4. Done — the system classifies the new type immediately
 
 ## Adding or Editing XLSX Keywords
 
@@ -194,7 +238,7 @@ Edit `prompts/rules/payable_ageing.yaml` or `prompts/rules/receivable_ageing.yam
 pytest tests/ -v
 ```
 
-33 tests covering: classification engine, XLSX parser, rule-based scorer, classify endpoint, document type CRUD.
+50 tests covering: container DI, classification engine, local LLM service, prompt builder, Docling parser, XLSX parser, rule-based scorer, classify endpoint, document type CRUD, training routes.
 
 ## Running Evals
 
@@ -202,9 +246,23 @@ Place real sample files in `data/raw/<doc_type>/` then:
 
 ```bash
 python evals/run_evals.py --base-url http://localhost:8000
+
+# Run a single doc type only:
+python evals/run_evals.py --base-url http://localhost:8000 \
+  --cases evals/test_cases/bank_statement_cases.json
 ```
 
-Outputs accuracy per document type and saves a scorecard to `evals/scorecards/`.
+**Eval pass criteria** — all three fields must match exactly:
+
+| Field | Rule |
+|---|---|
+| `document_type` | Exact match against `name` from `seed_data.yaml` |
+| `subject_type` | `"business"` or `"individual"` |
+| `classification_method` | `"local_llm"` (PDF/image/DOCX) or `"rule_based"` (XLSX) |
+
+Confidence is captured in the scorecard but does not affect pass/fail. Missing sample files are skipped, not failed.
+
+Scorecards saved to `evals/scorecards/{timestamp}.json`.
 
 ---
 
@@ -213,12 +271,10 @@ Outputs accuracy per document type and saves a scorecard to `evals/scorecards/`.
 | Variable | Default | Description |
 |---|---|---|
 | `DATABASE_URL` | `sqlite+aiosqlite:///./document_identifier.db` | Database connection string |
-| `GOOGLE_CLOUD_PROJECT_ID` | — | GCP project ID |
-| `GOOGLE_APPLICATION_CREDENTIALS` | — | Path to service account JSON |
-| `DOCUMENT_AI_LOCATION` | `us` | Processor region (`us` or `eu`) |
-| `DOCUMENT_AI_PROCESSOR_ID` | — | Custom classifier processor ID |
-| `GCS_TRAINING_BUCKET` | — | GCS bucket for training data |
-| `CONFIDENCE_THRESHOLD` | `0.6` | Minimum Document AI confidence to accept |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server address |
+| `OLLAMA_MODEL` | `qwen2.5:14b` | Model used for classification |
+| `LOCAL_TRAINING_DIR` | `data/training` | Local directory for training document storage |
+| `CONFIDENCE_THRESHOLD` | `0.6` | Minimum LLM confidence to accept a classification |
 | `XLSX_RULE_THRESHOLD` | `0.5` | Minimum keyword hit ratio for XLSX classification |
-| `MAX_UPLOAD_BYTES` | `20971520` | Max file size (20 MB) |
+| `MAX_UPLOAD_BYTES` | `20971520` | Max upload size (20 MB) |
 | `DEBUG` | `false` | Enable SQLAlchemy query logging |
