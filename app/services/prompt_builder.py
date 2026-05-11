@@ -38,15 +38,30 @@ class PromptBuilder:
     def _build_types_section(self) -> str:
         lines = []
         for cl in self._labels:
-            lines.append(f"- {cl.label}: {cl.name}")
+            hint = self._extract_arabic_hint(cl.description)
+            suffix = f" ({hint})" if hint else ""
+            lines.append(f"- {cl.label}: {cl.name}{suffix}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _extract_arabic_hint(description: str) -> str:
+        """Return the Arabic name from 'Also known as ...' if present."""
+        if not description:
+            return ""
+        marker = "Also known as '"
+        idx = description.find(marker)
+        if idx == -1:
+            return ""
+        start = idx + len(marker)
+        end = description.find("'", start)
+        return description[start:end] if end != -1 else ""
 
     def _build_examples_section(self) -> str:
         if not any(cl.examples for cl in self._labels):
             return ""
-        parts = ["FEW-SHOT EXAMPLES (correct classifications):\n"]
+        parts = ["FEW-SHOT EXAMPLES:\n"]
         for cl in self._labels:
-            for i, example in enumerate(cl.examples[:2]):
-                parts.append(f"Example — {cl.label} ({i + 1}):\n{example[:800]}\n-> {cl.label}\n")
+            if cl.examples:
+                parts.append(f"Example — {cl.label}:\n{cl.examples[0][:200]}\n-> {cl.label}\n")
         parts.append("\n")
         return "\n".join(parts)

@@ -51,7 +51,7 @@ def run_case(client: httpx.Client, base_url: str, case: dict, repo_root: str) ->
         resp = client.post(
             f"{base_url}/api/v1/documents/classify",
             files={"file": (filename, content)},
-            timeout=30,
+            timeout=90,
         )
         resp.raise_for_status()
         actual = resp.json()

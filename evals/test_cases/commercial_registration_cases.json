@@ -1,0 +1,62 @@
+[
+  {
+    "id": "cr-001",
+    "description": "Eurotech CR 2026 — bilingual (Arabic + English)",
+    "file_path": "../documents_for_training/data/commercial_registration/eurotech_cr_2026_20251130_122240.pdf",
+    "filename": "eurotech_cr_2026.pdf",
+    "expected": {
+      "document_type": "Commercial Registration",
+      "subject_type": "business",
+      "classification_method": "local_llm",
+      "extracted_fields": null
+    }
+  },
+  {
+    "id": "cr-002",
+    "description": "Matin Trading CR 2026 — Arabic-only",
+    "file_path": "../documents_for_training/data/commercial_registration/matin_trd_cr__2026_20251201_094038.pdf",
+    "filename": "matin_trd_cr_2026.pdf",
+    "expected": {
+      "document_type": "Commercial Registration",
+      "subject_type": "business",
+      "classification_method": "local_llm",
+      "extracted_fields": null
+    }
+  },
+  {
+    "id": "cr-003",
+    "description": "Matin Trading CR 2026 alternate copy — Arabic-only",
+    "file_path": "../documents_for_training/data/commercial_registration/1773038877819-matin_trd_cr__2026_20251201_094038.pdf",
+    "filename": "matin_trd_cr_2026_alt.pdf",
+    "expected": {
+      "document_type": "Commercial Registration",
+      "subject_type": "business",
+      "classification_method": "local_llm",
+      "extracted_fields": null
+    }
+  },
+  {
+    "id": "cr-004",
+    "description": "QGI CR 2024-2028 — Arabic-only",
+    "file_path": "evals/test_cases/commercial_registration_cases.pdf",
+    "filename": "qgi_cr_2024_2028.pdf",
+    "expected": {
+      "document_type": "Commercial Registration",
+      "subject_type": "business",
+      "classification_method": "local_llm",
+      "extracted_fields": null
+    }
+  },
+  {
+    "id": "cr-005",
+    "description": "Al Kindi Trading CR June 2025 — bilingual (Arabic + English)",
+    "file_path": "evals/test_cases/commercial_registration_case.pdf",
+    "filename": "alkindi_cr_2025.pdf",
+    "expected": {
+      "document_type": "Commercial Registration",
+      "subject_type": "business",
+      "classification_method": "local_llm",
+      "extracted_fields": null
+    }
+  }
+]
