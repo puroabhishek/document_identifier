@@ -1,6 +1,6 @@
 # Document Identifier
 
-Automatically classifies uploaded business and individual documents using a **fully local AI pipeline** — Docling for text extraction and Qwen2.5 via Ollama for classification. Designed for fintech onboarding journeys where users upload multiple documents at once — the system identifies each one and routes it to the correct slot.
+Automatically classifies uploaded business and individual documents using a **fully local AI pipeline** — pdfplumber for text extraction and Qwen2.5 via Ollama for classification. Designed for fintech onboarding journeys where users upload multiple documents at once — the system identifies each one and routes it to the correct slot.
 
 **Data sovereignty:** All processing is in-process on the host server. No document bytes are transmitted to any external service. QCB data residency compliant.
 
@@ -43,10 +43,10 @@ Validate extension + file size
     │
     ├── XLSX? ──→ XlsxParser → keyword scoring (prompts/rules/*.yaml)
     │
-    └── Other ──→ Docling (extract text + tables → markdown)
+    └── Other ──→ pdfplumber / python-docx (extract text)
                         │
                         ▼
-              Qwen2.5:14b via Ollama (few-shot classification)
+              Qwen2.5:1.5b via Ollama (zero-shot classification)
                         │
                         ▼
               Match class_label → DocumentType in DB
@@ -62,12 +62,12 @@ Validate extension + file size
 
 **Classification methods:**
 - `rule_based` — XLSX files scored against keyword rules in `prompts/rules/`
-- `local_llm` — PDF/image/DOCX processed by Docling + Qwen2.5 locally
+- `local_llm` — PDF/DOCX processed by pdfplumber/python-docx + Qwen2.5 locally
 - `unclassified` — No match or confidence below threshold (default 0.6)
 
 **Why this stack:**
-- **Docling** (IBM open-source) — best-in-class table extraction from PDFs, critical for bank statements, ageing reports, and financial statements
-- **Qwen2.5:14b** — strongest Arabic-English bilingual model available for local deployment; handles Qatar-specific documents (QID, CR, Trade License) reliably
+- **pdfplumber** — lightweight, zero-ML-dependency PDF text extraction; works on all hardware including Intel Mac
+- **Qwen2.5:1.5b** — fast inference on CPU (Intel Mac compatible); handles Arabic-English bilingual documents (QID, CR, Trade License) reliably at low latency
 
 ---
 
@@ -82,7 +82,7 @@ document_identifier/
 │   ├── classification/         Engine + rule-based scorer
 │   ├── db/                     SQLAlchemy base, session, seed loader
 │   ├── models/                 DocumentType, TrainingDocument, ClassificationLog
-│   ├── parsers/                XlsxParser, DoclingParser, MIME factory
+│   ├── parsers/                XlsxParser, DoclingParser (pdfplumber/python-docx), MIME factory
 │   ├── routers/                classify, document_types, training, health
 │   ├── schemas/                Pydantic request/response models
 │   ├── services/               LocalLLMService + PromptBuilder
@@ -132,7 +132,7 @@ document_identifier/
 ```bash
 # Install Ollama from https://ollama.com, then:
 ollama serve                    # start Ollama server (keep running)
-ollama pull qwen2.5:14b         # ~8.9 GB download — do this once
+ollama pull qwen2.5:1.5b        # ~1 GB download — do this once
 ```
 
 ### 3. Install dependencies
@@ -140,8 +140,6 @@ ollama pull qwen2.5:14b         # ~8.9 GB download — do this once
 ```bash
 pip install -r requirements.txt
 ```
-
-Note: `docling` pulls PyTorch and layout models on first install (~2–4 GB). Subsequent installs are cached.
 
 ### 4. Configure environment
 
@@ -209,7 +207,7 @@ Uploading a labeled document adds it as an example in the classification prompt.
 
 ```
 POST /api/v1/training/documents  (document_type_id=9, file=bank_statement.pdf)
-  → Docling extracts text from the PDF
+  → pdfplumber extracts text from the PDF
   → Stored in DB as a labeled example
   → Prompt builder refreshed — example active for all future classify calls
   → 201 returned (no polling required)
@@ -238,7 +236,7 @@ Edit `prompts/rules/payable_ageing.yaml` or `prompts/rules/receivable_ageing.yam
 pytest tests/ -v
 ```
 
-50 tests covering: container DI, classification engine, local LLM service, prompt builder, Docling parser, XLSX parser, rule-based scorer, classify endpoint, document type CRUD, training routes.
+50 tests covering: container DI, classification engine, local LLM service, prompt builder, pdfplumber parser, XLSX parser, rule-based scorer, classify endpoint, document type CRUD, training routes.
 
 ## Running Evals
 
@@ -272,7 +270,7 @@ Scorecards saved to `evals/scorecards/{timestamp}.json`.
 |---|---|---|
 | `DATABASE_URL` | `sqlite+aiosqlite:///./document_identifier.db` | Database connection string |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server address |
-| `OLLAMA_MODEL` | `qwen2.5:14b` | Model used for classification |
+| `OLLAMA_MODEL` | `qwen2.5:1.5b` | Model used for classification |
 | `LOCAL_TRAINING_DIR` | `data/training` | Local directory for training document storage |
 | `CONFIDENCE_THRESHOLD` | `0.6` | Minimum LLM confidence to accept a classification |
 | `XLSX_RULE_THRESHOLD` | `0.5` | Minimum keyword hit ratio for XLSX classification |
