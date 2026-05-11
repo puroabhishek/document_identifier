@@ -38,15 +38,17 @@ def test_prompt_truncates_long_document_text():
     pb = _make_builder()
     long_text = "x" * 10000
     prompt = pb.build_classify_prompt(long_text)
-    # 4000 char truncation means the full long_text is not present
-    assert "x" * 4001 not in prompt
+    # 1500 char truncation means the full long_text is not present
+    assert "x" * 1501 not in prompt
 
 
-def test_prompt_includes_few_shot_examples():
+def test_prompt_does_not_include_few_shot_examples():
     pb = _make_builder(examples=["Example bank statement text here"])
     prompt = pb.build_classify_prompt("doc")
-    assert "Example bank statement text here" in prompt
-    assert "FEW-SHOT EXAMPLES" in prompt
+    # Examples are stored but not injected into the classify prompt
+    # (kept short for fast CPU inference)
+    assert "Example bank statement text here" not in prompt
+    assert "FEW-SHOT EXAMPLES" not in prompt
 
 
 def test_prompt_no_examples_section_when_empty():
@@ -55,7 +57,7 @@ def test_prompt_no_examples_section_when_empty():
     assert "FEW-SHOT EXAMPLES" not in prompt
 
 
-def test_prompt_uses_max_two_examples_per_class():
+def test_examples_stored_on_class_label():
     pb = PromptBuilder()
     pb.set_class_labels([
         ClassLabel(
@@ -65,10 +67,10 @@ def test_prompt_uses_max_two_examples_per_class():
             examples=["example one", "example two", "example three"],
         )
     ])
+    # Examples are stored (available for future use) but not in the prompt
+    assert pb._labels[0].examples == ["example one", "example two", "example three"]
     prompt = pb.build_classify_prompt("doc")
-    assert "example one" in prompt
-    assert "example two" in prompt
-    assert "example three" not in prompt
+    assert "example one" not in prompt
 
 
 def test_set_class_labels_replaces_previous():
