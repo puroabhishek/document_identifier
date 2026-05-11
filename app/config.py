@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     # Local LLM (Ollama)
     ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:14b"
+    ollama_model: str = "qwen2.5:1.5b"
     local_training_dir: str = "data/training"
 
     # Classification thresholds

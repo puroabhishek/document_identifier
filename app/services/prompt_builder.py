@@ -26,23 +26,19 @@ class PromptBuilder:
 
     def build_classify_prompt(self, document_text: str) -> str:
         types_section = self._build_types_section()
-        examples_section = self._build_examples_section()
-
         return (
             "You are a document classification engine for a Qatar fintech company.\n"
             "Classify the given document into exactly ONE of the following document types.\n"
             'Respond with ONLY valid JSON: {"class_label": "<label>", "confidence": <0.0-1.0>}\n\n'
             f"VALID DOCUMENT TYPES:\n{types_section}\n\n"
-            f"{examples_section}"
-            f"DOCUMENT TO CLASSIFY:\n---\n{document_text[:4000]}\n---\n\n"
+            f"DOCUMENT TO CLASSIFY:\n---\n{document_text[:1500]}\n---\n\n"
             'Respond with JSON only. If the type cannot be determined, use {"class_label": "unknown", "confidence": 0.0}'
         )
 
     def _build_types_section(self) -> str:
         lines = []
         for cl in self._labels:
-            desc = cl.description[:200].replace("\n", " ") if cl.description else ""
-            lines.append(f"- {cl.label}: {cl.name}. {desc}")
+            lines.append(f"- {cl.label}: {cl.name}")
         return "\n".join(lines)
 
     def _build_examples_section(self) -> str:
