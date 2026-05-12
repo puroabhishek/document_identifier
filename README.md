@@ -1,4 +1,4 @@
-# Document Identifier
+# Document Identifier - Qatar Relevant
 
 Automatically classifies uploaded business and individual documents using a **fully local AI pipeline** — pdfplumber for text extraction and Qwen2.5 via Ollama for classification. Designed for fintech onboarding journeys where users upload multiple documents at once — the system identifies each one and routes it to the correct slot.
 
